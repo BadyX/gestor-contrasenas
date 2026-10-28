@@ -1,0 +1,16 @@
+# binarios: se publican como releases, no en el código
+*.exe
+*.apk
+build/
+dist/
+__pycache__/
+*.spec
+
+# secretos y datos personales
+*.key
+*.jks
+keystore.properties
+*.dat
+config.json
+denied.json
+extension/config.js
