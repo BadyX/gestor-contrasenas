@@ -71,10 +71,13 @@ SECTIONS = {
 }
 SORTS = ["Más recientes", "Más antiguas", "A–Z", "Z–A"]
 
-APP_VERSION = "2.10"
+APP_VERSION = "2.11"
 
 # Historial de cambios (lo más reciente primero): (versión, fecha, título, [novedades])
 CHANGELOG = [
+    ("2.11", "28/10/2026", "Corrección de la instalación de actualizaciones", [
+        "🛠 Arreglado el fallo que impedía instalar una actualización ya descargada: el ayudante que sustituye el ejecutable no llegaba a arrancar al lanzarse desde la aplicación sin consola.",
+    ]),
     ("2.10", "28/10/2026", "Actualizaciones desde GitHub", [
         "🐙 Las actualizaciones se descargan ahora de las Releases del repositorio de GitHub en lugar del VPS. La firma Ed25519 y la comprobación SHA-256 siguen igual, así que el origen de los archivos no afecta a la seguridad.",
     ]),
@@ -1533,9 +1536,12 @@ def launch_swap(new_path, exe, anterior):
     with open(ps1, "w", encoding="utf-8-sig") as f:
         f.write(UPDATE_PS1)
     env = {k: v for k, v in os.environ.items() if not k.startswith(("_PYI", "_MEIPASS"))}
-    subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", ps1,
+    # Sin consola (exe --windowed) hay que redirigir la entrada/salida o Windows da «el controlador no es válido».
+    # CREATE_NO_WINDOW + CREATE_NEW_PROCESS_GROUP; no se usa DETACHED_PROCESS (anula CREATE_NO_WINDOW y powershell se cae).
+    subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps1,
                       str(os.getpid()), new_path, exe, anterior], env=env, close_fds=True,
-                     creationflags=0x08000000 | 0x00000008)  # sin ventana + desligado
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     creationflags=0x08000000 | 0x00000200)
 
 
 def button(parent, text, command, primary=True, danger=False, **kw):
