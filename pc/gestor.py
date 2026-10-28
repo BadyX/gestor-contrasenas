@@ -71,10 +71,13 @@ SECTIONS = {
 }
 SORTS = ["Más recientes", "Más antiguas", "A–Z", "Z–A"]
 
-APP_VERSION = "2.11"
+APP_VERSION = "2.12"
 
 # Historial de cambios (lo más reciente primero): (versión, fecha, título, [novedades])
 CHANGELOG = [
+    ("2.12", "28/10/2026", "Limpieza de descargas pendientes", [
+        "🧹 Al abrir la aplicación se borra el archivo temporal de una actualización descargada que no llegó a instalarse.",
+    ]),
     ("2.11", "28/10/2026", "Corrección de la instalación de actualizaciones", [
         "🛠 Arreglado el fallo que impedía instalar una actualización ya descargada: el ayudante que sustituye el ejecutable no llegaba a arrancar al lanzarse desde la aplicación sin consola.",
     ]),
@@ -1689,6 +1692,11 @@ class App(tk.Tk):
         self.after(150, self.sync_tick)
         # actualizaciones: se busca una vez al abrir (sin necesidad de desbloquear)
         self.update_q, self.update_busy = queue.Queue(), False
+        if getattr(sys, "frozen", False):  # restos de una descarga que no llegó a instalarse
+            try:
+                os.remove(os.path.join(os.path.dirname(sys.executable), "GestorContraseñas.nuevo"))
+            except OSError:
+                pass
         self.after(2500, self.update_start)
         self.show_login()
 
