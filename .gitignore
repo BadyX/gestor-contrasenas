@@ -1,8 +1,10 @@
-# binarios: se publican como releases, no en el código
+# binarios: los exe se publican como releases
 *.exe
-*.apk
 build/
 dist/
+.gradle/
+.kotlin/
+.idea/
 __pycache__/
 *.spec
 
@@ -10,6 +12,7 @@ __pycache__/
 *.key
 *.jks
 keystore.properties
+local.properties
 *.dat
 config.json
 denied.json

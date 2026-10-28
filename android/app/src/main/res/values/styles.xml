@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Gestor" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#0F1220</item>
+        <item name="android:statusBarColor">#171A2E</item>
+        <item name="android:navigationBarColor">#0F1220</item>
+        <item name="android:colorAccent">#6C7BFF</item>
+    </style>
+</resources>
