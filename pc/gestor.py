@@ -71,10 +71,13 @@ SECTIONS = {
 }
 SORTS = ["Más recientes", "Más antiguas", "A–Z", "Z–A"]
 
-APP_VERSION = "2.12"
+APP_VERSION = "2.13"
 
 # Historial de cambios (lo más reciente primero): (versión, fecha, título, [novedades])
 CHANGELOG = [
+    ("2.13", "29/10/2026", "Nuevo icono", [
+        "🎨 Nuevo icono de la aplicación: candado con llave (SafeKeeper).",
+    ]),
     ("2.12", "28/10/2026", "Limpieza de descargas pendientes", [
         "🧹 Al abrir la aplicación se borra el archivo temporal de una actualización descargada que no llegó a instalarse.",
     ]),
