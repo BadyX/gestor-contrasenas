@@ -145,8 +145,13 @@ private fun PairScreen(vm: AppViewModel, onScan: () -> Unit) {
         }
         Text("La contraseña maestra no sale del móvil: solo sirve para abrir tus datos aquí.",
             color = MutedColor, fontSize = 12.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 10.dp))
+        VersionText(Modifier.padding(top = 18.dp))
     }
 }
+
+@Composable
+private fun VersionText(modifier: Modifier = Modifier) =
+    Text("Versión ${BuildConfig.VERSION_NAME}", color = MutedColor, fontSize = 11.sp, textAlign = TextAlign.Center, modifier = modifier)
 
 @Composable
 private fun UnlockScreen(vm: AppViewModel) {
@@ -193,6 +198,7 @@ private fun UnlockScreen(vm: AppViewModel) {
         TextButton(onClick = { confirmWipe = true }, Modifier.padding(top = 12.dp)) {
             Text("Olvidar los datos de este móvil", color = MutedColor, fontSize = 12.sp)
         }
+        VersionText(Modifier.padding(top = 18.dp))
     }
     if (confirmWipe) AlertDialog(
         onDismissRequest = { confirmWipe = false },
@@ -240,6 +246,7 @@ private fun MainScreen(vm: AppViewModel) {
     Scaffold(
         containerColor = BgColor,
         snackbarHost = { SnackbarHost(snack) },
+        bottomBar = { Box(Modifier.fillMaxWidth().background(BgColor).padding(vertical = 4.dp), contentAlignment = Alignment.Center) { VersionText() } },
         topBar = {
             TopAppBar(
                 title = { Text("Mis claves", fontWeight = FontWeight.Bold) },
@@ -301,6 +308,21 @@ private fun MainScreen(vm: AppViewModel) {
         )
     }
     if (showSettings) SettingsDialog(vm) { showSettings = false }
+    vm.update?.let { u ->
+        AlertDialog(
+            onDismissRequest = { if (!vm.updateBusy) vm.dismissUpdate() },
+            title = { Text("Nueva versión ${u.versionName}") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text("Tienes la ${BuildConfig.VERSION_NAME}.", color = MutedColor, fontSize = 13.sp)
+                    u.notes.forEach { Text("• $it", fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp)) }
+                    if (vm.updateBusy) Text("Descargando…", color = AccentColor, modifier = Modifier.padding(top = 8.dp))
+                }
+            },
+            confirmButton = { TextButton(onClick = { vm.installUpdate() }, enabled = !vm.updateBusy) { Text("Actualizar") } },
+            dismissButton = { TextButton(onClick = { vm.dismissUpdate() }, enabled = !vm.updateBusy) { Text("Más tarde") } },
+        )
+    }
 }
 
 const val TAB_DENIED = 4 // pestañas: 0 correos, 1 webs, 2 wifi, 3 aplicaciones, 4 accesos denegados
@@ -438,6 +460,8 @@ private fun SettingsDialog(vm: AppViewModel, onClose: () -> Unit) {
         text = {
             Column {
                 val p = vm.pairing
+                Text("Versión ${BuildConfig.VERSION_NAME}", color = MutedColor, fontSize = 13.sp)
+                OutlinedButton(onClick = { vm.checkUpdate(manual = true) }, Modifier.padding(top = 4.dp, bottom = 10.dp)) { Text("Buscar actualización") }
                 Text(if (p != null) "📡 Vinculado con el PC (${p.lastHost.ifBlank { p.hosts.firstOrNull() ?: "" }})" else "Sin vincular: los cambios solo se guardan en este móvil.",
                     fontWeight = FontWeight.SemiBold)
                 Text(if (vm.lastSync.isNotBlank()) "Última sincronización: ${formatDate(vm.lastSync)}" else "Aún no se ha sincronizado.",

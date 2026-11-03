@@ -157,6 +157,49 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun count(tab: Int): Int { version; return data.section(tab).size }
 
+    // ---- actualizaciones de la app ----
+    var update by mutableStateOf<UpdateInfo?>(null); private set
+    var updateBusy by mutableStateOf(false); private set
+    private var updateDismissed = ""
+
+    /** Busca una versión nueva en GitHub. Al abrir solo avisa una vez por versión; a mano responde siempre. */
+    fun checkUpdate(manual: Boolean = false) {
+        if (updateBusy) return
+        viewModelScope.launch {
+            try {
+                val info = withContext(Dispatchers.IO) { Updater.check() }
+                if (info != null && (manual || info.versionName != updateDismissed)) update = info
+                else if (manual) message = "Ya tienes la última versión (${BuildConfig.VERSION_NAME})"
+            } catch (e: Exception) {
+                if (manual) message = "No se pudo comprobar las actualizaciones: ${e.message}"
+            }
+        }
+    }
+
+    fun dismissUpdate() { updateDismissed = update?.versionName ?: ""; update = null }
+
+    fun installUpdate() {
+        val info = update ?: return
+        val ctx = getApplication<Application>()
+        if (!Updater.canInstall(ctx)) { // Android pide permiso una vez para instalar APK desde esta app
+            message = "Permite a Gestor instalar aplicaciones y vuelve a pulsar «Actualizar»"
+            Updater.askPermission(ctx)
+            return
+        }
+        updateBusy = true
+        viewModelScope.launch {
+            try {
+                val apk = withContext(Dispatchers.IO) { Updater.download(ctx, info) }
+                update = null
+                Updater.install(ctx, apk)
+            } catch (e: Exception) {
+                message = "No se pudo descargar la actualización: ${e.message}"
+            } finally {
+                updateBusy = false
+            }
+        }
+    }
+
     /** Contraseñas repetidas dentro de todo el almacén (para marcar ⚠). */
     fun isRepeated(e: Entry): Boolean {
         version
@@ -312,6 +355,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private fun startLoop() {
         loopJob?.cancel()
         loopJob = viewModelScope.launch {
+            checkUpdate()
             syncNow(silent = true)
             while (true) { delay(90_000); syncNow(silent = true) }
         }
