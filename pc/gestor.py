@@ -68,13 +68,22 @@ apply_theme("dark")
 SECTIONS = {
     "correos": {"title": "Correos", "sub": "Cuentas de correo guardadas", "field": "Correo", "icon": "✉"},
     "webs": {"title": "Webs", "sub": "Sitios web guardados", "field": "Web", "icon": "🌐"},
+    "wifi": {"title": "Wifi", "sub": "Redes wifi guardadas", "field": "Red", "icon": "📶", "alias": None},
+    "apps": {"title": "Aplicaciones", "sub": "Aplicaciones guardadas", "field": "Aplicación", "icon": "📱",
+             "alias": "Usuario"},
 }
+SYNC_SECTIONS = ("correos", "webs")  # lo que se sincroniza con el móvil (Wifi y Aplicaciones solo viven en el PC)
 SORTS = ["Más recientes", "Más antiguas", "A–Z", "Z–A"]
 
-APP_VERSION = "2.13"
+APP_VERSION = "2.14"
 
 # Historial de cambios (lo más reciente primero): (versión, fecha, título, [novedades])
 CHANGELOG = [
+    ("2.14", "03/11/2026", "Secciones Wifi y Aplicaciones", [
+        "📶 Nueva sección Wifi (después de Webs): guarda la red y su contraseña.",
+        "📱 Nueva sección Aplicaciones: guarda la aplicación, el usuario y la contraseña.",
+        "Las dos tienen buscador, orden, contraseñas repetidas, duplicadas, selección múltiple y copias de seguridad como el resto. Por ahora solo están en el PC (no se sincronizan con el móvil).",
+    ]),
     ("2.13", "29/10/2026", "Nuevo icono", [
         "🎨 Nuevo icono de la aplicación: candado con llave (SafeKeeper).",
     ]),
@@ -236,7 +245,7 @@ class Vault:
         # "brechas": caché de correos comprobados y último resultado (cifrado junto al resto)
         # "deleted": lápidas {id: rev} de lo borrado, para que un borrado también se propague al móvil
         # "webcheck": resultado de la última comprobación de webs {id: {ok, why, t}} (solo en este dispositivo)
-        self.data = {"correos": [], "webs": [], "brechas": {}, "deleted": {}, "webcheck": {}, "denykey": ""}
+        self.data = {"correos": [], "webs": [], "wifi": [], "apps": [], "brechas": {}, "deleted": {}, "webcheck": {}, "denykey": ""}
         self.salt = b""
         self.key = b""
         self.fernet = None
@@ -329,7 +338,7 @@ class Vault:
         return json.loads(self.fernet.decrypt(blob[20:]).decode("utf-8"))
 
     def apply_merged(self, merged):
-        for sec in SECTIONS:
+        for sec in SYNC_SECTIONS:
             self.data[sec] = merged[sec]
         self.data["deleted"] = merged["deleted"]
         self.save()
@@ -392,7 +401,7 @@ def merge_data(local, remote):
     limit = (datetime.now(timezone.utc) - timedelta(days=TOMBSTONE_DAYS)).isoformat(timespec="milliseconds")
     deleted = {i: r for i, r in deleted.items() if r >= limit}  # las lápidas muy viejas se descartan
     out = {"deleted": deleted}
-    for sec in SECTIONS:
+    for sec in SYNC_SECTIONS:
         best = {}
         for e in list(local.get(sec) or []) + list(remote.get(sec) or []):
             i = e.get("id")
@@ -431,11 +440,12 @@ def find_duplicates(entries, section):
     """Grupos de entradas repetidas: en Correos, el mismo correo; en Webs, la misma web (sin «www.» ni ruta)
     y el mismo usuario (el alias puede ser «usuario (correo)»: basta con compartir alguno de los dos).
     Devuelve listas de las propias entradas (las que tienen 2 o más)."""
-    if section == "correos":
+    if section in ("correos", "wifi", "apps"):  # misma clave: el correo, la red, o la aplicación con el mismo usuario
         by = {}
         for e in entries:
-            by.setdefault(e["user"].strip().lower(), []).append(e)
-        return [g for k, g in by.items() if k and len(g) > 1]
+            key = e["user"].strip().lower() + (("\n" + e.get("alias", "").strip().lower()) if section == "apps" else "")
+            by.setdefault(key, []).append(e)
+        return [g for k, g in by.items() if k.strip() and len(g) > 1]
     by_host = {}
     for e in entries:
         host = host_of(e["user"])
@@ -2688,7 +2698,7 @@ class App(tk.Tk):
                                else "Contraseña expuesta en filtraciones")
                 elif e["user"] in legacy:
                     why.append("Contraseña expuesta en filtraciones")
-            if mails and sec != "webs":  # en Webs el ❗ solo señala contraseñas expuestas; el correo se ve en Correos
+            if mails and sec == "correos":  # fuera de Correos el ❗ solo señala contraseñas expuestas; el correo se ve en Correos
                 for m in sorted({m.lower() for m in EMAIL_RE.findall(e["user"] + " " + e.get("alias", ""))}):
                     names = mails.get(m)
                     if names:
@@ -2747,9 +2757,11 @@ class App(tk.Tk):
         label("Contraseña *", 2, 0)
         pw = entry(form)
         pw.grid(row=3, column=0, sticky="ew", ipady=8, pady=(4, 6))
-        label("Usuario / alias (opcional)", 0, 1)
+        alias_label = s.get("alias", "Usuario / alias (opcional)")  # None: sin campo de usuario (Wifi)
         alias = entry(form)
-        alias.grid(row=1, column=1, sticky="ew", ipady=8, pady=(4, 12), padx=(20, 0))
+        if alias_label:
+            label(alias_label, 0, 1)
+            alias.grid(row=1, column=1, sticky="ew", ipady=8, pady=(4, 12), padx=(20, 0))
         label("Notas (opcional)", 2, 1)
         notes = tk.Text(form, height=5, width=10, font=FONT, bg=BG, fg=TEXT, insertbackground=TEXT, relief="flat",
                         wrap="word", highlightthickness=1, highlightbackground=LINE, highlightcolor=ACCENT)
@@ -3862,6 +3874,10 @@ class App(tk.Tk):
              "Eliminar", lambda: self.wipe("correos"), True)
         card("🗑  Eliminar todas las webs", f"Borra las {len(d['webs'])} webs guardadas.",
              "Eliminar", lambda: self.wipe("webs"), True)
+        card("🗑  Eliminar todas las redes wifi", f"Borra las {len(d['wifi'])} redes guardadas.",
+             "Eliminar", lambda: self.wipe("wifi"), True)
+        card("🗑  Eliminar todas las aplicaciones", f"Borra las {len(d['apps'])} aplicaciones guardadas.",
+             "Eliminar", lambda: self.wipe("apps"), True)
 
         def lock_text():
             m = self.cfg["lock_minutes"]
