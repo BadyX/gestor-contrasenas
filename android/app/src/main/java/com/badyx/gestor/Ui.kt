@@ -40,6 +40,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -254,19 +255,21 @@ private fun MainScreen(vm: AppViewModel) {
             )
         },
         floatingActionButton = {
-            if (tab < 2) FloatingActionButton(onClick = { editing = null; showEdit = true }, containerColor = AccentColor,
+            if (tab != TAB_DENIED) FloatingActionButton(onClick = { editing = null; showEdit = true }, containerColor = AccentColor,
                 contentColor = Color.White) { Text("+", fontSize = 28.sp) }
         },
     ) { pad ->
-        LaunchedEffect(tab, vm.deniedVersion) { if (tab == 2) vm.markDeniedSeen() }
+        LaunchedEffect(tab, vm.deniedVersion) { if (tab == TAB_DENIED) vm.markDeniedSeen() }
         Column(Modifier.padding(pad).fillMaxSize()) {
-            TabRow(selectedTabIndex = tab, containerColor = PanelColor, contentColor = AccentColor) {
+            ScrollableTabRow(selectedTabIndex = tab, containerColor = PanelColor, contentColor = AccentColor, edgePadding = 8.dp) {
                 Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("✉ Correos (${vm.count(0)})", fontSize = 13.sp) })
                 Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("🌐 Webs (${vm.count(1)})", fontSize = 13.sp) })
-                Tab(selected = tab == 2, onClick = { tab = 2 },
-                    text = { Text((if (vm.deniedUnseen > 0 && tab != 2) "⚠" else "🚫") + " Accesos", fontSize = 13.sp) })
+                Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text("📶 Wifi (${vm.count(2)})", fontSize = 13.sp) })
+                Tab(selected = tab == 3, onClick = { tab = 3 }, text = { Text("📱 Apps (${vm.count(3)})", fontSize = 13.sp) })
+                Tab(selected = tab == TAB_DENIED, onClick = { tab = TAB_DENIED },
+                    text = { Text((if (vm.deniedUnseen > 0 && tab != TAB_DENIED) "⚠" else "🚫") + " Accesos", fontSize = 13.sp) })
             }
-            if (tab == 2) { DeniedPanel(vm); return@Column }
+            if (tab == TAB_DENIED) { DeniedPanel(vm); return@Column }
             OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(12.dp, 10.dp, 12.dp, 4.dp),
                 placeholder = { Text("🔍  Buscar") }, singleLine = true,
                 trailingIcon = { if (query.isNotEmpty()) TextButton(onClick = { query = "" }) { Text("✕") } })
@@ -279,14 +282,14 @@ private fun MainScreen(vm: AppViewModel) {
             } else LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp, 4.dp, 12.dp, 96.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(list, key = { it.id }) { e ->
-                    EntryCard(e, tab == 1, vm.isRepeated(e),
+                    EntryCard(e, tab == 1 || (tab == 3 && e.url.isNotBlank()), vm.isRepeated(e),
                         onEdit = { editing = e; showEdit = true }, onDelete = { deleting = e })
                 }
             }
         }
     }
-    if (showEdit) EditDialog(editing, onDismiss = { showEdit = false }) { u, p, a, n ->
-        vm.save(editing, tab, u, p, a, n); showEdit = false
+    if (showEdit) EditDialog(editing, tab, onDismiss = { showEdit = false }) { u, p, a, n, l ->
+        vm.save(editing, tab, u, p, a, n, l); showEdit = false
     }
     deleting?.let { e ->
         AlertDialog(
@@ -299,6 +302,8 @@ private fun MainScreen(vm: AppViewModel) {
     }
     if (showSettings) SettingsDialog(vm) { showSettings = false }
 }
+
+const val TAB_DENIED = 4 // pestañas: 0 correos, 1 webs, 2 wifi, 3 aplicaciones, 4 accesos denegados
 
 @Composable
 private fun DeniedPanel(vm: AppViewModel) {
@@ -345,6 +350,7 @@ private fun EntryCard(e: Entry, isWeb: Boolean, repeated: Boolean, onEdit: () ->
     Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Panel2Color)) {
         Column(Modifier.padding(14.dp)) {
             Text(e.user, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+            if (e.url.isNotBlank()) Text("🔗 ${e.url}", color = MutedColor, fontSize = 13.sp)
             if (e.alias.isNotBlank()) Text("👤 ${e.alias}", color = MutedColor, fontSize = 13.sp)
             Spacer(Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -371,7 +377,7 @@ private fun EntryCard(e: Entry, isWeb: Boolean, repeated: Boolean, onEdit: () ->
             val pad = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp)
             val h = Modifier.height(36.dp)
             Row(Modifier.fillMaxWidth().padding(top = 2.dp), horizontalArrangement = Arrangement.End) {
-                if (isWeb) TextButton(onClick = { openWeb(ctx, e.user) }, h, contentPadding = pad) { Text("↗") }
+                if (isWeb) TextButton(onClick = { openWeb(ctx, e.url.ifBlank { e.user }) }, h, contentPadding = pad) { Text("↗") }
                 TextButton(onClick = { show = !show }, h, contentPadding = pad) { Text(if (show) "🙈" else "👁") }
                 TextButton(onClick = { copySensitive(ctx, e.pass) }, h, contentPadding = pad) { Text("📋") }
                 TextButton(onClick = onEdit, h, contentPadding = pad) { Text("✏") }
@@ -382,7 +388,10 @@ private fun EntryCard(e: Entry, isWeb: Boolean, repeated: Boolean, onEdit: () ->
 }
 
 @Composable
-private fun EditDialog(entry: Entry?, onDismiss: () -> Unit, onSave: (String, String, String, String) -> Unit) {
+private fun EditDialog(entry: Entry?, tab: Int, onDismiss: () -> Unit, onSave: (String, String, String, String, String) -> Unit) {
+    val userLabel = listOf("Correo", "Web", "Red", "Aplicación")[tab]
+    val aliasLabel = when (tab) { 2 -> null; 3 -> "Usuario"; else -> "Usuario / alias (opcional)" }
+    var url by remember { mutableStateOf(entry?.url ?: "") }
     var user by remember { mutableStateOf(entry?.user ?: "") }
     var pass by remember { mutableStateOf(entry?.pass ?: "") }
     var alias by remember { mutableStateOf(entry?.alias ?: "") }
@@ -396,7 +405,7 @@ private fun EditDialog(entry: Entry?, onDismiss: () -> Unit, onSave: (String, St
         title = { Text(if (entry == null) "Añadir" else "Editar") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                OutlinedTextField(user, { user = it }, Modifier.fillMaxWidth(), label = { Text("Correo o web *") },
+                OutlinedTextField(user, { user = it }, Modifier.fillMaxWidth(), label = { Text("$userLabel *") },
                     singleLine = true, isError = err && user.isBlank())
                 OutlinedTextField(pass, { pass = it }, Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("Contraseña *") },
                     singleLine = true, isError = err && pass.isBlank())
@@ -404,14 +413,16 @@ private fun EditDialog(entry: Entry?, onDismiss: () -> Unit, onSave: (String, St
                     Text(labels[level], color = colors[level], fontSize = 12.sp, modifier = Modifier.weight(1f))
                     TextButton(onClick = { pass = generatePassword() }) { Text("🎲 Generar segura") }
                 }
-                OutlinedTextField(alias, { alias = it }, Modifier.fillMaxWidth(), label = { Text("Usuario / alias (opcional)") }, singleLine = true)
+                if (aliasLabel != null) OutlinedTextField(alias, { alias = it }, Modifier.fillMaxWidth(), label = { Text(aliasLabel) }, singleLine = true)
+                if (tab == 3) OutlinedTextField(url, { url = it }, Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("URL (opcional)") },
+                    singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
                 OutlinedTextField(notes, { notes = it }, Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("Notas (opcional)") }, minLines = 2)
                 if (err) Text("Los campos obligatorios no pueden estar vacíos.", color = DangerColor, fontSize = 12.sp)
             }
         },
         confirmButton = {
             TextButton(onClick = {
-                if (user.isBlank() || pass.isBlank()) err = true else onSave(user.trim(), pass.trim(), alias.trim(), notes.trim())
+                if (user.isBlank() || pass.isBlank()) err = true else onSave(user.trim(), pass.trim(), alias.trim(), notes.trim(), url.trim())
             }) { Text("Aceptar") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },

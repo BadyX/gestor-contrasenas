@@ -66,6 +66,21 @@ class CryptoAndMergeTest {
     }
 
     @Test
+    fun wifiAndAppsMergeSurviveRoundTripAndKeepUrl() {
+        val app = e("app1", t(2)).also { it.url = "https://netflix.com" }
+        val a = VaultData(wifi = mutableListOf(e("w1", t(1))), apps = mutableListOf(app))
+        val b = VaultData(wifi = mutableListOf(e("w2", t(1))))
+        val m = mergeData(a, b)
+        assertEquals(listOf("w1", "w2"), m.wifi.map { it.id }.sorted())
+        assertEquals("https://netflix.com", m.apps.single().url)
+        val back = VaultData.fromJson(m.toJson().toString())
+        assertEquals(2, back.wifi.size)
+        assertEquals("https://netflix.com", back.apps.single().url)
+        // el JSON de sincronización las incluye y no queda nada de ellas en «extra»
+        assertTrue(m.toSyncJson().has("wifi") && m.toSyncJson().has("apps"))
+    }
+
+    @Test
     fun mergeEditAfterDeleteSurvivesAndTieDeletes() {
         val survive = mergeData(VaultData(mutableListOf(e("x", t(9)))), VaultData(deleted = mutableMapOf("x" to t(2))))
         assertEquals(listOf("x"), survive.correos.map { it.id })

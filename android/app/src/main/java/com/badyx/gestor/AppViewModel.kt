@@ -151,7 +151,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         version // lectura: hace que el llamante se actualice con los cambios
         val q = query.trim().lowercase()
         return data.section(tab)
-            .filter { q.isEmpty() || (it.user + " " + it.alias + " " + it.notes).lowercase().contains(q) }
+            .filter { q.isEmpty() || (it.user + " " + it.alias + " " + it.url + " " + it.notes).lowercase().contains(q) }
             .sortedByDescending { it.rev } // lo último tocado primero (rev es UTC: no depende de la zona horaria de cada dispositivo)
     }
 
@@ -160,7 +160,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** Contraseñas repetidas dentro de todo el almacén (para marcar ⚠). */
     fun isRepeated(e: Entry): Boolean {
         version
-        return (data.correos + data.webs).count { it.pass == e.pass } > 1
+        return (data.correos + data.webs + data.wifi + data.apps).count { it.pass == e.pass } > 1
     }
 
     // ---- acceso ----
@@ -235,7 +235,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     Quad(p, d, k, s).also { vaultFile.write(blob) }
                 }
                 pairingStore.save(p); pairing = p
-                key = k; salt = s; data = VaultData(remote.correos, remote.webs, remote.deleted); version++
+                key = k; salt = s; data = VaultData(remote.correos, remote.webs, remote.wifi, remote.apps, remote.deleted); version++
                 applyRemoteExtras(remote) // adopta la clave del registro del PC y trae sus intentos
                 ensureDenyKey()
                 markSynced()
@@ -269,12 +269,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ---- cambios ----
-    fun save(entry: Entry?, tab: Int, user: String, pass: String, alias: String, notes: String) {
+    fun save(entry: Entry?, tab: Int, user: String, pass: String, alias: String, notes: String, url: String = "") {
         if (entry == null) {
-            data.section(tab).add(Entry.create(user, pass, alias, notes))
+            data.section(tab).add(Entry.create(user, pass, alias, notes, url))
         } else {
             val old = entry.pass
             entry.user = user; entry.pass = pass; entry.alias = alias; entry.notes = notes
+            if (url.isNotEmpty() || entry.json.has("url")) entry.url = url
             entry.json.put("modified", nowIso())
             if (pass != old) entry.json.put("changed", nowIso())
             entry.rev = nowRev()

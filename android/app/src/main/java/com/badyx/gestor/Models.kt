@@ -37,6 +37,9 @@ class Entry(val json: JSONObject) {
     var alias: String
         get() = json.optString("alias")
         set(v) { json.put("alias", v) }
+    var url: String
+        get() = json.optString("url")
+        set(v) { json.put("url", v) }
     var notes: String
         get() = json.optString("notes")
         set(v) { json.put("notes", v) }
@@ -49,25 +52,30 @@ class Entry(val json: JSONObject) {
     fun copy(): Entry = Entry(JSONObject(json.toString()))
 
     companion object {
-        fun create(user: String, pass: String, alias: String, notes: String): Entry {
+        fun create(user: String, pass: String, alias: String, notes: String, url: String = ""): Entry {
             val stamp = nowIso()
             return Entry(JSONObject().apply {
                 put("id", UUID.randomUUID().toString().replace("-", ""))
                 put("user", user); put("pass", pass); put("alias", alias); put("notes", notes)
+                if (url.isNotEmpty()) put("url", url)
                 put("created", stamp); put("changed", stamp); put("rev", nowRev())
             })
         }
     }
 }
 
-/** Contenido del almacén: correos, webs y lápidas de lo borrado ({id: momento del borrado}). */
+val SECTION_KEYS = listOf("correos", "webs", "wifi", "apps")
+
+/** Contenido del almacén: correos, webs, wifi, aplicaciones y lápidas de lo borrado ({id: momento del borrado}). */
 class VaultData(
     var correos: MutableList<Entry> = mutableListOf(),
     var webs: MutableList<Entry> = mutableListOf(),
+    var wifi: MutableList<Entry> = mutableListOf(),
+    var apps: MutableList<Entry> = mutableListOf(),
     var deleted: MutableMap<String, String> = mutableMapOf(),
     private val extra: JSONObject = JSONObject(),
 ) {
-    fun section(i: Int): MutableList<Entry> = if (i == 0) correos else webs
+    fun section(i: Int): MutableList<Entry> = when (i) { 0 -> correos; 1 -> webs; 2 -> wifi; else -> apps }
 
     /** Datos que solo viven en este móvil (p. ej. la clave privada del registro de accesos denegados). */
     fun extraString(key: String): String = extra.optString(key)
@@ -82,6 +90,8 @@ class VaultData(
     fun toSyncJson(denied: JSONArray? = null): JSONObject = JSONObject().apply {
         put("correos", JSONArray(correos.map { it.json }))
         put("webs", JSONArray(webs.map { it.json }))
+        put("wifi", JSONArray(wifi.map { it.json }))
+        put("apps", JSONArray(apps.map { it.json }))
         put("deleted", JSONObject(deleted as Map<*, *>))
         if (denied != null) put("denied", denied)
     }
@@ -90,6 +100,8 @@ class VaultData(
     fun toJson(): JSONObject = JSONObject(extra.toString()).apply {
         put("correos", JSONArray(correos.map { it.json }))
         put("webs", JSONArray(webs.map { it.json }))
+        put("wifi", JSONArray(wifi.map { it.json }))
+        put("apps", JSONArray(apps.map { it.json }))
         put("deleted", JSONObject(deleted as Map<*, *>))
     }
 
@@ -102,8 +114,8 @@ class VaultData(
                 .map { Entry(j.getJSONArray(key).getJSONObject(it)) }.toMutableList()
             val del = mutableMapOf<String, String>()
             j.optJSONObject("deleted")?.let { o -> o.keys().forEach { del[it] = o.getString(it) } }
-            val extra = JSONObject(text).apply { remove("correos"); remove("webs"); remove("deleted") }
-            return VaultData(list("correos"), list("webs"), del, extra)
+            val extra = JSONObject(text).apply { SECTION_KEYS.forEach { remove(it) }; remove("deleted") }
+            return VaultData(list("correos"), list("webs"), list("wifi"), list("apps"), del, extra)
         }
     }
 }
@@ -131,7 +143,9 @@ fun mergeData(local: VaultData, remote: VaultData): VaultData {
     return VaultData(
         mergeSection(local.correos, remote.correos),
         mergeSection(local.webs, remote.webs),
+        mergeSection(local.wifi, remote.wifi),
+        mergeSection(local.apps, remote.apps),
         deleted,
-        JSONObject(local.toJson().toString()).apply { remove("correos"); remove("webs"); remove("deleted") },
+        JSONObject(local.toJson().toString()).apply { SECTION_KEYS.forEach { remove(it) }; remove("deleted") },
     )
 }

@@ -70,15 +70,19 @@ SECTIONS = {
     "webs": {"title": "Webs", "sub": "Sitios web guardados", "field": "Web", "icon": "🌐"},
     "wifi": {"title": "Wifi", "sub": "Redes wifi guardadas", "field": "Red", "icon": "📶", "alias": None},
     "apps": {"title": "Aplicaciones", "sub": "Aplicaciones guardadas", "field": "Aplicación", "icon": "📱",
-             "alias": "Usuario"},
+             "alias": "Usuario", "url": True},
 }
-SYNC_SECTIONS = ("correos", "webs")  # lo que se sincroniza con el móvil (Wifi y Aplicaciones solo viven en el PC)
+SYNC_SECTIONS = tuple(SECTIONS)  # todo se sincroniza con el móvil
 SORTS = ["Más recientes", "Más antiguas", "A–Z", "Z–A"]
 
-APP_VERSION = "2.14"
+APP_VERSION = "2.15"
 
 # Historial de cambios (lo más reciente primero): (versión, fecha, título, [novedades])
 CHANGELOG = [
+    ("2.15", "03/11/2026", "URL en Aplicaciones y sincronización con el móvil", [
+        "🔗 Aplicaciones tiene un campo URL (opcional): se ve en la lista, entra en el buscador y el botón ↗ la abre en el navegador.",
+        "📱 Wifi y Aplicaciones se sincronizan ahora con el móvil (app de Android 1.4).",
+    ]),
     ("2.14", "03/11/2026", "Secciones Wifi y Aplicaciones", [
         "📶 Nueva sección Wifi (después de Webs): guarda la red y su contraseña.",
         "📱 Nueva sección Aplicaciones: guarda la aplicación, el usuario y la contraseña.",
@@ -325,7 +329,7 @@ class Vault:
         self.data[sec] = [e for e in self.data[sec] if e["id"] not in ids]
 
     def sync_snapshot(self):
-        return {"correos": self.data["correos"], "webs": self.data["webs"], "deleted": self.data["deleted"]}
+        return {**{sec: self.data[sec] for sec in SYNC_SECTIONS}, "deleted": self.data["deleted"]}
 
     def pack(self, payload):
         """Mismo formato que el archivo de datos: MAGIC + sal + token Fernet (para enviarlo cifrado al móvil)."""
@@ -2369,7 +2373,7 @@ class App(tk.Tk):
 
         def actions_for(i, it):
             acts = []
-            if self.current == "webs":
+            if self.current == "webs" or it.get("url"):
                 acts.append(("open", "↗", "Abrir la web en el navegador"))
             if it.get("notes"):
                 acts.append(("notes", "📝", "Ver las notas"))
@@ -2425,10 +2429,12 @@ class App(tk.Tk):
                 draw_check(22, mid, "all" if i in selected else "none", PANEL2, f"chk:{i}")
                 dead = i in view["down"]  # web que ya no responde: dirección en rojo
                 ucol, utags = (DANGER, ("wk", f"wk:{i}")) if dead else (TEXT, ())
-                if it.get("alias"):
+                sub = "  ·  ".join(x for x in ("👤 " + it["alias"] if it.get("alias") else "",
+                                                 "🔗 " + it["url"] if it.get("url") else "") if x)
+                if sub:
                     canvas.create_text(TX, mid - 9, text=short(it["user"], user_chars), anchor="w", fill=ucol,
                                        font=FONT, tags=utags)
-                    canvas.create_text(TX, mid + 11, text="👤 " + short(it["alias"], user_chars + 4), anchor="w",
+                    canvas.create_text(TX, mid + 11, text=short(sub, user_chars + 4), anchor="w",
                                        fill=MUTED, font=("Segoe UI Emoji", 9))
                 else:
                     canvas.create_text(TX, mid, text=short(it["user"], user_chars), anchor="w", fill=ucol,
@@ -2553,7 +2559,7 @@ class App(tk.Tk):
             _, i, name = hit
             it = items[i]
             if name == "open":
-                open_web(self, it["user"])
+                open_web(self, it.get("url") or it["user"])
             elif name == "notes":
                 messagebox.showinfo("Notas", f"{it['user']}\n\n{it['notes']}", parent=self)
             elif name == "eye":
@@ -2588,7 +2594,7 @@ class App(tk.Tk):
             dup_btn.config(bg=WARN if self.only_dups else PANEL2, fg="#1b1e3a" if self.only_dups else TEXT)
             # se conserva el índice original para que editar/borrar funcione con filtro y orden
             shown = [(i, it) for i, it in enumerate(items)
-                     if q in (it["user"] + "\n" + it.get("alias", "") + "\n" + it.get("notes", "") + "\n"
+                     if q in (it["user"] + "\n" + it.get("alias", "") + "\n" + it.get("url", "") + "\n" + it.get("notes", "") + "\n"
                               + it["pass"]).lower()
                      and (not self.only_dups or counts[it["pass"]] > 1)]
             mode = SORTS[self.sort]
@@ -2763,7 +2769,11 @@ class App(tk.Tk):
             label(alias_label, 0, 1)
             alias.grid(row=1, column=1, sticky="ew", ipady=8, pady=(4, 12), padx=(20, 0))
         label("Notas (opcional)", 2, 1)
-        notes = tk.Text(form, height=5, width=10, font=FONT, bg=BG, fg=TEXT, insertbackground=TEXT, relief="flat",
+        url = entry(form)
+        if s.get("url"):  # Aplicaciones: dirección web opcional
+            label("URL (opcional)", 6, 0)
+            url.grid(row=7, column=0, columnspan=2, sticky="ew", ipady=8, pady=(4, 6))
+        notes =tk.Text(form, height=5, width=10, font=FONT, bg=BG, fg=TEXT, insertbackground=TEXT, relief="flat",
                         wrap="word", highlightthickness=1, highlightbackground=LINE, highlightcolor=ACCENT)
         notes.grid(row=3, column=1, rowspan=3, sticky="nsew", pady=(4, 0), padx=(20, 0))
 
@@ -2816,11 +2826,12 @@ class App(tk.Tk):
             user.insert(0, old["user"])
             pw.insert(0, old["pass"])
             alias.insert(0, old.get("alias", ""))
+            url.insert(0, old.get("url", ""))
             notes.insert("1.0", old.get("notes", ""))
             update_meter(old["pass"])
 
         msg = tk.Label(form, text="", bg=PANEL, fg=DANGER, font=("Segoe UI", 10), anchor="w")
-        msg.grid(row=6, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        msg.grid(row=8, column=0, columnspan=2, sticky="w", pady=(8, 0))
         user.focus_set()
 
         def accept(_=None):
@@ -2832,6 +2843,8 @@ class App(tk.Tk):
                 (user if not u else pw).focus_set()
                 return
             data = {"user": u, "pass": p, "alias": alias.get().strip(), "notes": notes.get("1.0", "end").strip()}
+            if s.get("url"):
+                data["url"] = url.get().strip()
             if old:
                 if all(old.get(k, "") == v for k, v in data.items()):
                     self.show_list()  # no se tocó nada: no se registra modificación
@@ -2853,10 +2866,10 @@ class App(tk.Tk):
             self.toast("Guardado ✔")
 
         bar = tk.Frame(form, bg=PANEL)
-        bar.grid(row=7, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        bar.grid(row=9, column=0, columnspan=2, sticky="w", pady=(6, 0))
         button(bar, "Aceptar", accept).pack(side="left")
         button(bar, "Cancelar", self.show_list, primary=False).pack(side="left", padx=10)
-        for w in (user, pw, alias):
+        for w in (user, pw, alias, url):
             w.bind("<Return>", accept)  # en Notas, Enter es salto de línea
         self.bind("<Escape>", lambda e: self.show_list())
 
